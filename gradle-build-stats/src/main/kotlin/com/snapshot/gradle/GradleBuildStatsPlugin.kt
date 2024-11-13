@@ -1,5 +1,6 @@
 package com.snapshot.gradle
 
+import com.snapshot.gradle.GradleBuildStatsConfig.Companion.readConfig
 import org.gradle.api.Plugin
 import org.gradle.api.Project
 import org.gradle.api.flow.BuildWorkResult
@@ -12,14 +13,12 @@ import org.gradle.api.services.ServiceReference
 import org.gradle.api.tasks.Input
 import org.gradle.build.event.BuildEventsListenerRegistry
 import org.gradle.internal.buildevents.BuildStartedTime
-import java.io.BufferedWriter
-import java.io.File
-import java.io.FileWriter
 import java.time.Instant
-import java.time.ZoneId
-import java.time.format.DateTimeFormatter
-import java.util.*
+import java.time.LocalDateTime
+import java.time.ZoneOffset
 import javax.inject.Inject
+import kotlin.time.DurationUnit
+import kotlin.time.toDuration
 
 internal val logger = Logger { message ->
     println("!!! $message")
@@ -45,96 +44,73 @@ class GradleBuildStatsPlugin @Inject constructor(
         }
 
         val buildStartTime = try {
-            buildStartedTime.startTime
+            Instant.ofEpochMilli(buildStartedTime.startTime).atOffset(ZoneOffset.UTC).toLocalDateTime()
         } catch (e: Throwable) {
-            logger.log("serviceOf failed for BuildStartedTime")
+            logger.log("Failed to get BuildStartedTime")
             e.printStackTrace()
             return
         }
         logger.log("GradleBuildStatsPlugin apply, taskNames=$taskNames startTime=$buildStartTime")
 
-        val buildStatsFile = createBuildStatsFile(pluginConfig, buildStartTime) ?: return
+        val reportWriterService = project.gradle.sharedServices.registerIfAbsent(
+            "com.snapshot.gradle.GradleBuildStatsReportWriterService",
+            GradleBuildStatsReportWriterService::class.java
+        ) { spec ->
+            spec.parameters.buildStartTime = buildStartTime
+            spec.parameters.pluginConfig = pluginConfig
+        }.orNull ?: run {
+            logger.log("Failed to get GradleBuildStatsReportWriterService")
+            return
+        }
 
-        val fileWriter = BufferedWriter(FileWriter(buildStatsFile, false))
+        if (!reportWriterService.initialise()) {
+            logger.log("Failed to initialise GradleBuildStatsReportWriterService")
+            return
+        }
 
-        fileWriter.appendLine("version: 1")
-        fileWriter.appendLine("build tasks: ${taskNames.joinToString(",")}")
-        fileWriter.appendLine("build start time: $buildStartTime")
-        fileWriter.appendLine()
-
-        fileWriter.close()
+        reportWriterService.startReport(taskNames, buildStartTime)
 
         val taskTrackerService = project.gradle.sharedServices.registerIfAbsent(
             "com.snapshot.gradle.GradleBuildStatsTaskCompletionService",
             GradleBuildStatsTaskCompletionService::class.java
-        ) { spec ->
-            spec.parameters.buildStatsFile = buildStatsFile
-            spec.parameters.pluginConfig = pluginConfig
-        }
+        ) { }
 
         registry.onTaskCompletion(taskTrackerService)
 
         flowScope.always(GradleBuildStatsCompletedAction::class.java) { spec ->
             spec.parameters.buildResult.set(flowProviders.buildWorkResult)
             spec.parameters.startTime.set(buildStartTime)
-            spec.parameters.buildStatsFile.set(buildStatsFile)
         }
     }
+}
 
-    private fun isEnabledForTaskNames(taskNames: List<String>, pluginConfig: GradleBuildStatsConfig): Boolean {
-        if (taskNames.isEmpty()) {
+internal fun isEnabledForTaskNames(taskNames: List<String>, pluginConfig: GradleBuildStatsConfig): Boolean {
+    if (taskNames.isEmpty()) {
+        return true
+    }
+    // TODO - check enabled first?
+    if (pluginConfig.enabledForTasksWithName.isNotEmpty()) {
+        if (pluginConfig.enabledForTasksWithName.any { enabledTaskName ->
+                taskNames.any { taskName ->
+                    taskName.endsWith(enabledTaskName)
+                }
+            }) {
             return true
         }
-        if (pluginConfig.disabledForTasksWithName.isNotEmpty()) {
-            if (pluginConfig.disabledForTasksWithName.any { taskNames.contains(it) }) {
-                return false
-            }
-            return true
-        } else if (pluginConfig.enabledForTasksWithName.isNotEmpty()) {
-            if (pluginConfig.enabledForTasksWithName.any { taskNames.contains(it) }) {
-                return true
-            }
+        return false
+    }
+    // TODO - check for endsWith?
+    if (pluginConfig.disabledForTasksWithName.isNotEmpty()) {
+        if (pluginConfig.disabledForTasksWithName.any { disabledTaskName ->
+                taskNames.any { taskName ->
+                    taskName.endsWith(disabledTaskName)
+                }
+            }) {
             return false
         }
         return true
     }
-
-    private fun readConfig(project: Project): GradleBuildStatsConfig {
-        val propertiesFile = project.layout.projectDirectory.file("gradle-build-stats.properties").asFile
-        return if (propertiesFile.exists() && propertiesFile.canRead()) {
-            val properties = Properties()
-            properties.load(
-                propertiesFile.inputStream()
-            )
-            GradleBuildStatsConfig.load(properties, project)
-        } else {
-            GradleBuildStatsConfig.load(project)
-        }
-    }
-
-    private fun createBuildStatsFile(pluginConfig: GradleBuildStatsConfig, buildStartTime: Long): File? {
-        val buildStatsHomeDir = File(pluginConfig.buildStatsHomePath)
-        buildStatsHomeDir.mkdirs()
-        if (!buildStatsHomeDir.exists()) {
-            logger.log("buildStatsHomeDir not exists $buildStatsHomeDir")
-            return null
-        }
-        if (!buildStatsHomeDir.canWrite()) {
-            logger.log("cannot write to buildStatsHomeDir $buildStatsHomeDir")
-            return null
-        }
-
-        val buildDateTime = Instant.ofEpochMilli(buildStartTime).atZone(ZoneId.systemDefault()).toLocalDateTime()
-        val buildStatsFileName = DateTimeFormatter.ofPattern("yyyy-MM-dd--HH-mm-ss").format(buildDateTime)
-        logger.log("buildStatsFileName $buildStatsFileName")
-
-        val buildStatsFile = File(buildStatsHomeDir, "$buildStatsFileName.dat")
-        if (!buildStatsFile.createNewFile()) {
-            logger.log("cannot create buildStatsFile $buildStatsFile")
-            return null
-        }
-        return buildStatsFile
-    }
+    return true
 }
 
 internal fun interface Logger {
@@ -149,18 +125,22 @@ class GradleBuildStatsCompletedAction : FlowAction<GradleBuildStatsCompletedActi
         val buildResult: Property<BuildWorkResult>
 
         @get:Input
-        val startTime: Property<Long>
-
-        @get:Input
-        val buildStatsFile: Property<File>
+        val startTime: Property<LocalDateTime>
 
         @get:ServiceReference
         val taskCompletionService: Property<GradleBuildStatsTaskCompletionService>
+
+        @get:ServiceReference
+        val reportWriterService: Property<GradleBuildStatsReportWriterService>
     }
 
     override fun execute(parameters: Parameters) {
         val taskCompletionService = parameters.taskCompletionService.orNull ?: run {
             logger.log("error: missing taskCompletionService")
+            return
+        }
+        val reportWriterService = parameters.reportWriterService.orNull ?: run {
+            logger.log("error: missing reportWriterService")
             return
         }
         taskCompletionService.onBuildCompleted()
@@ -169,26 +149,20 @@ class GradleBuildStatsCompletedAction : FlowAction<GradleBuildStatsCompletedActi
             logger.log("error: missing startTime")
             return
         }
-        val duration = System.currentTimeMillis() - startTime
+        val duration = (System.currentTimeMillis() - startTime.toInstant(ZoneOffset.UTC).toEpochMilli()).toDuration(
+            DurationUnit.MILLISECONDS
+        )
         val buildResult = parameters.buildResult.orNull ?: run {
             logger.log("error: missing buildResult")
             return
         }
         val isBuildSuccess = !buildResult.failure.isPresent
 
-        val buildStatsFile = parameters.buildStatsFile.orNull ?: run {
-            logger.log("error: missing buildStatsFile")
-            return
-        }
-        val buildStatsFileWriter = BufferedWriter(FileWriter(buildStatsFile, true))
         val status = if (isBuildSuccess) {
             "SUCCESS"
         } else {
             "FAILURE"
         }
-        buildStatsFileWriter.appendLine()
-        buildStatsFileWriter.appendLine("build status: $status")
-        buildStatsFileWriter.appendLine("build duration: $duration")
-        buildStatsFileWriter.close()
+        reportWriterService.finish(status, duration)
     }
 }
