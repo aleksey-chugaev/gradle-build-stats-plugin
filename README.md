@@ -21,6 +21,27 @@ buildDuration: 12881
 
 By default, the files are saved in the project build folder, e.g. `{PROJECT_DIR}/build/reports/gradle-build-stats/2024-11-20--10-49-17.yaml`.
 
+## Set up
+
+Update your `settings.gradle.kts` file to include Gradle plugin portal repository for plugin dependencies:
+
+```kotlin
+pluginManagement {
+  repositories {
+    ...
+    gradlePluginPortal()
+  }
+}
+```
+
+Add the plugin to your root `build.gradle.kts` file:
+
+```kotlin
+plugins {
+  id("com.chugaev.gradlebuildstats") version "0.0.1"
+}
+```
+
 ## Configuration
 
 The plugin can be configured using a properties file. To do so, create a `gradle-build-stats.properties` file in the root project folder. Supported properties are:
