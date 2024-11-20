@@ -1,6 +1,6 @@
-package com.snapshot.gradle
+package com.chugaev.gradlebuildstats
 
-import com.snapshot.gradle.GradleBuildStatsTaskCompletionService.TaskInfo
+import com.chugaev.gradlebuildstats.GradleBuildStatsTaskCompletionService.TaskInfo
 import org.gradle.api.services.BuildService
 import org.gradle.api.services.BuildServiceParameters
 import java.io.BufferedWriter
@@ -23,12 +23,12 @@ abstract class GradleBuildStatsReportWriterService : BuildService<GradleBuildSta
     }
 
     fun initialise(): Boolean {
-        logger.log("initialise")
+        logger.debug("initialise")
         return buildStatsFileWriter != null
     }
 
     fun startReport(taskNames: List<String>, buildStartTime: LocalDateTime) {
-        logger.log("startReport")
+        logger.debug("startReport")
         buildStatsFileWriter?.start(taskNames, buildStartTime)
     }
 
@@ -37,7 +37,7 @@ abstract class GradleBuildStatsReportWriterService : BuildService<GradleBuildSta
     }
 
     fun finish(buildStatus: String, buildDuration: Duration) {
-        logger.log("finish")
+        logger.debug("finish")
         buildStatsFileWriter?.finish(buildStatus, buildDuration)
     }
 }
@@ -67,20 +67,20 @@ interface GradleBuildStatsReportWriter {
             val buildStatsHomeDir = File(pluginConfig.buildStatsHomePath)
             buildStatsHomeDir.mkdirs()
             if (!buildStatsHomeDir.exists()) {
-                logger.log("buildStatsHomeDir not exists $buildStatsHomeDir")
+                logger.warn("buildStatsHomeDir not exists $buildStatsHomeDir")
                 return null
             }
             if (!buildStatsHomeDir.canWrite()) {
-                logger.log("cannot write to buildStatsHomeDir $buildStatsHomeDir")
+                logger.warn("cannot write to buildStatsHomeDir $buildStatsHomeDir")
                 return null
             }
 
             val buildStatsFileName = DateTimeFormatter.ofPattern("yyyy-MM-dd--HH-mm-ss").format(buildStartTime)
-            logger.log("buildStatsFileName $buildStatsFileName")
+            logger.debug("buildStatsFileName $buildStatsFileName")
 
-            val buildStatsFile = File(buildStatsHomeDir, "$buildStatsFileName.dat")
+            val buildStatsFile = File(buildStatsHomeDir, "$buildStatsFileName.yaml")
             if (!buildStatsFile.createNewFile()) {
-                logger.log("cannot create buildStatsFile $buildStatsFile")
+                logger.warn("cannot create buildStatsFile $buildStatsFile")
                 return null
             }
             return buildStatsFile
@@ -96,19 +96,30 @@ private class BufferedReportFileWriter(private val file: File) : GradleBuildStat
 
     override fun start(taskNames: List<String>, buildStartTime: LocalDateTime) {
         fileWriter.appendLine("version: 1")
-        fileWriter.appendLine("build tasks: ${taskNames.joinToString(",")}")
-        fileWriter.appendLine("build start time: ${buildStartTime.toInstant(ZoneOffset.UTC).toEpochMilli()}")
-        fileWriter.appendLine()
+        fileWriter.appendLine("buildTaskNames:")
+        taskNames.forEach { taskName ->
+            fileWriter.appendLine("- \"$taskName\"")
+        }
+        fileWriter.appendLine("buildStartTime: ${buildStartTime.toInstant(ZoneOffset.UTC).toEpochMilli()}")
+//        fileWriter.appendLine()
     }
 
     override fun finish(buildStatus: String, buildDuration: Duration) {
-        fileWriter.appendLine()
-        fileWriter.appendLine("build status: $buildStatus")
-        fileWriter.appendLine("build duration: ${buildDuration.inWholeMilliseconds}")
+//        fileWriter.appendLine()
+        fileWriter.appendLine("buildStatus: \"$buildStatus\"")
+        fileWriter.appendLine("buildDuration: ${buildDuration.inWholeMilliseconds}")
         fileWriter.close()
     }
 
+    private var isAddingTasks = false
+
     override fun addTask(taskInfo: TaskInfo) {
-        fileWriter.appendLine("${taskInfo.taskPath} ${taskInfo.duration.inWholeMilliseconds} ${taskInfo.status.describe()}")
+        if (!isAddingTasks) {
+            fileWriter.appendLine("taskDetails:")
+            isAddingTasks = true
+        }
+        fileWriter.appendLine("- path: \"${taskInfo.taskPath}\"")
+        fileWriter.appendLine("  duration: ${taskInfo.duration.inWholeMilliseconds}")
+        fileWriter.appendLine("  status: \"${taskInfo.status.describe()}\"")
     }
 }

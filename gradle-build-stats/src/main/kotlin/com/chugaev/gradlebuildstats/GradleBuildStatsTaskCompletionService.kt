@@ -1,4 +1,4 @@
-package com.snapshot.gradle
+package com.chugaev.gradlebuildstats
 
 import org.gradle.api.provider.Property
 import org.gradle.api.services.BuildService
@@ -22,11 +22,11 @@ abstract class GradleBuildStatsTaskCompletionService : BuildService<BuildService
         getReportWriterService().get()
     }
 
-    var lastKnownTask: String? = null
+//    var lastKnownTask: String? = null
 
     override fun onFinish(e: FinishEvent?) {
         (e as? TaskFinishEvent)?.let { event ->
-            logger.log("taskFinished ${event.descriptor.taskPath} ${event.result.endTime - event.result.startTime}")
+            logger.debug("taskFinished ${event.descriptor.taskPath} ${event.result.endTime - event.result.startTime}")
             val status = when (val result = event.result) {
                 is TaskSuccessResult -> TaskInfo.TaskStatus.Success(
                     upToDate = result.isUpToDate,
@@ -42,13 +42,13 @@ abstract class GradleBuildStatsTaskCompletionService : BuildService<BuildService
                 status = status
             )
             reportWriterService.addTask(taskInfo)
-            lastKnownTask = event.descriptor.taskPath
+//            lastKnownTask = event.descriptor.taskPath
         }
     }
 
-    fun onBuildCompleted() {
-
-    }
+//    fun onBuildCompleted() {
+//
+//    }
 
     data class TaskInfo(val taskPath: String, val duration: Duration, val status: TaskStatus) {
         sealed interface TaskStatus {

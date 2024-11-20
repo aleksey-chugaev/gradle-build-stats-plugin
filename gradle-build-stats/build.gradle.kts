@@ -13,10 +13,11 @@ plugins {
 
     // Apply the Kotlin JVM plugin to add support for Kotlin.
     alias(libs.plugins.jvm)
+    alias(libs.plugins.gradle.pluginPublishing)
 }
 
-group = "com.snapshot.gradle"
-version = "0.0.2"
+group = "com.chugaev.gradlebuildstats"
+version = "0.0.1"
 
 repositories {
     // Use Maven Central for resolving dependencies.
@@ -28,13 +29,13 @@ testing {
         // Configure the built-in test suite
         val test by getting(JvmTestSuite::class) {
             // Use Kotlin Test framework
-            useKotlinTest("1.9.22")
+            useKotlinTest(libs.versions.kotlin)
         }
 
         // Create a new test suite
         val functionalTest by registering(JvmTestSuite::class) {
             // Use Kotlin Test framework
-            useKotlinTest("1.9.22")
+            useKotlinTest(libs.versions.kotlin)
 
             dependencies {
                 // functionalTest test suite depends on the production code in tests
@@ -52,11 +53,16 @@ testing {
 }
 
 gradlePlugin {
+    website = "https://github.com/aleksey-chugaev/gradle-build-stats-plugin"
+    vcsUrl = "https://github.com/aleksey-chugaev/gradle-build-stats-plugin"
     // Define the plugin
     plugins {
         create("gradle-build-stats") {
-            id = "gradle-build-stats-plugin"
-            implementationClass = "com.snapshot.gradle.GradleBuildStatsPlugin"
+            id = "com.chugaev.gradlebuildstats"
+            displayName = "Gradle Build Stats Plugin"
+            description = "A Gradle plugin to record the times it takes for gradle tasks to complete"
+            tags = listOf("performance")
+            implementationClass = "com.chugaev.gradlebuildstats.GradleBuildStatsPlugin"
         }
     }
 //    val greeting by plugins.creating {
