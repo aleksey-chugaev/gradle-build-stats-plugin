@@ -16,7 +16,7 @@ plugins {
     alias(libs.plugins.gradle.pluginPublishing)
 }
 
-group = "com.chugaev.gradlebuildstats"
+group = "io.github.aleksey-chugaev.gradlebuildstats"
 version = "0.0.1"
 
 repositories {
@@ -58,11 +58,11 @@ gradlePlugin {
     // Define the plugin
     plugins {
         create("gradle-build-stats") {
-            id = "com.chugaev.gradlebuildstats"
+            id = "io.github.aleksey-chugaev.gradlebuildstats"
             displayName = "Gradle Build Stats Plugin"
             description = "A Gradle plugin to record the times it takes for gradle tasks to complete"
             tags = listOf("performance")
-            implementationClass = "com.chugaev.gradlebuildstats.GradleBuildStatsPlugin"
+            implementationClass = "io.github.chugaev.gradlebuildstats.GradleBuildStatsPlugin"
         }
     }
 //    val greeting by plugins.creating {

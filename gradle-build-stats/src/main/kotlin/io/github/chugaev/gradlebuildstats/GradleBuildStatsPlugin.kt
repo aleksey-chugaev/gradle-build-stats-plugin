@@ -1,6 +1,6 @@
-package com.chugaev.gradlebuildstats
+package io.github.chugaev.gradlebuildstats
 
-import com.chugaev.gradlebuildstats.GradleBuildStatsConfig.Companion.readConfig
+import io.github.chugaev.gradlebuildstats.GradleBuildStatsConfig.Companion.readConfig
 import org.gradle.api.Plugin
 import org.gradle.api.Project
 import org.gradle.api.flow.BuildWorkResult

@@ -1,6 +1,6 @@
-package com.chugaev.gradlebuildstats
+package io.github.chugaev.gradlebuildstats
 
-import com.chugaev.gradlebuildstats.GradleBuildStatsTaskCompletionService.TaskInfo
+import io.github.chugaev.gradlebuildstats.GradleBuildStatsTaskCompletionService.TaskInfo
 import org.gradle.api.services.BuildService
 import org.gradle.api.services.BuildServiceParameters
 import java.io.BufferedWriter

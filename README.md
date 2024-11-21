@@ -38,7 +38,7 @@ Add the plugin to your root `build.gradle.kts` file:
 
 ```kotlin
 plugins {
-  id("com.chugaev.gradlebuildstats") version "0.0.1"
+  id("io.github.chugaev.gradlebuildstats") version "0.0.1"
 }
 ```
 

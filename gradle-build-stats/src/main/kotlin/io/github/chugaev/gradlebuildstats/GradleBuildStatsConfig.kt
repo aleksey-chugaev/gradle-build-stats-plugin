@@ -1,4 +1,4 @@
-package com.chugaev.gradlebuildstats
+package io.github.chugaev.gradlebuildstats
 
 import org.gradle.api.Project
 import java.io.Serializable
