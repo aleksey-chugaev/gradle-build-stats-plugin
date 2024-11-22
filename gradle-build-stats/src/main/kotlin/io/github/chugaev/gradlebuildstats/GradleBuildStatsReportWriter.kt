@@ -7,7 +7,6 @@ import java.io.BufferedWriter
 import java.io.File
 import java.io.FileWriter
 import java.time.LocalDateTime
-import java.time.ZoneOffset
 import java.time.format.DateTimeFormatter
 import kotlin.time.Duration
 
@@ -16,10 +15,17 @@ abstract class GradleBuildStatsReportWriterService : BuildService<GradleBuildSta
     interface Parameters : BuildServiceParameters {
         var buildStartTime: LocalDateTime
         var pluginConfig: GradleBuildStatsConfig
+        var taskNames: List<String>
+        var projectName: String
     }
 
     private val buildStatsFileWriter: GradleBuildStatsReportWriter? by lazy {
-        GradleBuildStatsReportWriter.createReportWriter(parameters.pluginConfig, parameters.buildStartTime)
+        GradleBuildStatsReportWriter.createReportWriter(
+            pluginConfig = parameters.pluginConfig,
+            buildStartTime = parameters.buildStartTime,
+            projectName = parameters.projectName,
+            taskNames = parameters.taskNames
+        )
     }
 
     fun initialise(): Boolean {
@@ -27,9 +33,9 @@ abstract class GradleBuildStatsReportWriterService : BuildService<GradleBuildSta
         return buildStatsFileWriter != null
     }
 
-    fun startReport(taskNames: List<String>, buildStartTime: LocalDateTime) {
+    fun startReport(projectName: String, taskNames: List<String>, buildStartTimeMillis: Long) {
         logger.debug("startReport")
-        buildStatsFileWriter?.start(taskNames, buildStartTime)
+        buildStatsFileWriter?.start(projectName, taskNames, buildStartTimeMillis)
     }
 
     fun addTask(taskInfo: TaskInfo) {
@@ -44,7 +50,7 @@ abstract class GradleBuildStatsReportWriterService : BuildService<GradleBuildSta
 
 interface GradleBuildStatsReportWriter {
 
-    fun start(taskNames: List<String>, buildStartTime: LocalDateTime)
+    fun start(projectName: String, taskNames: List<String>, buildStartTimeMillis: Long)
 
     fun finish(buildStatus: String, buildDuration: Duration)
 
@@ -53,9 +59,16 @@ interface GradleBuildStatsReportWriter {
     companion object {
         fun createReportWriter(
             pluginConfig: GradleBuildStatsConfig,
-            buildStartTime: LocalDateTime
+            buildStartTime: LocalDateTime,
+            projectName: String,
+            taskNames: List<String>,
         ): GradleBuildStatsReportWriter? {
-            val reportFile = createBuildStatsFile(pluginConfig, buildStartTime)
+            val reportFile = createBuildStatsFile(
+                pluginConfig = pluginConfig,
+                buildStartTime = buildStartTime,
+                projectName = projectName,
+                taskNames = taskNames
+            )
             return if (reportFile != null) {
                 BufferedReportFileWriter(reportFile)
             } else {
@@ -63,7 +76,12 @@ interface GradleBuildStatsReportWriter {
             }
         }
 
-        private fun createBuildStatsFile(pluginConfig: GradleBuildStatsConfig, buildStartTime: LocalDateTime): File? {
+        private fun createBuildStatsFile(
+            pluginConfig: GradleBuildStatsConfig,
+            buildStartTime: LocalDateTime,
+            projectName: String,
+            taskNames: List<String>,
+        ): File? {
             val buildStatsHomeDir = File(pluginConfig.buildStatsHomePath)
             buildStatsHomeDir.mkdirs()
             if (!buildStatsHomeDir.exists()) {
@@ -75,7 +93,16 @@ interface GradleBuildStatsReportWriter {
                 return null
             }
 
-            val buildStatsFileName = DateTimeFormatter.ofPattern("yyyy-MM-dd--HH-mm-ss").format(buildStartTime)
+            val buildStatsFileName = buildString {
+                append(DateTimeFormatter.ofPattern("yyyy-MM-dd--HH-mm-ss").format(buildStartTime))
+                append("-").append(projectName.lowercase())
+                val tasks = taskNames.mapNotNull {
+                    it.substringAfterLast(":").lowercase().takeIf { it.isNotEmpty() }
+                }.joinToString("-")
+                if (tasks.isNotEmpty()) {
+                    append("-").append(tasks)
+                }
+            }
             logger.debug("buildStatsFileName $buildStatsFileName")
 
             val buildStatsFile = File(buildStatsHomeDir, "$buildStatsFileName.yaml")
@@ -94,18 +121,17 @@ private class BufferedReportFileWriter(private val file: File) : GradleBuildStat
         BufferedWriter(FileWriter(file, false))
     }
 
-    override fun start(taskNames: List<String>, buildStartTime: LocalDateTime) {
+    override fun start(projectName: String, taskNames: List<String>, buildStartTimeMillis: Long) {
         fileWriter.appendLine("version: 1")
+        fileWriter.appendLine("project: $projectName")
         fileWriter.appendLine("buildTaskNames:")
         taskNames.forEach { taskName ->
             fileWriter.appendLine("- \"$taskName\"")
         }
-        fileWriter.appendLine("buildStartTime: ${buildStartTime.toInstant(ZoneOffset.UTC).toEpochMilli()}")
-//        fileWriter.appendLine()
+        fileWriter.appendLine("buildStartTime: $buildStartTimeMillis")
     }
 
     override fun finish(buildStatus: String, buildDuration: Duration) {
-//        fileWriter.appendLine()
         fileWriter.appendLine("buildStatus: \"$buildStatus\"")
         fileWriter.appendLine("buildDuration: ${buildDuration.inWholeMilliseconds}")
         fileWriter.close()
