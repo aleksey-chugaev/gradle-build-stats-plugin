@@ -23,6 +23,10 @@ import kotlin.time.toDuration
 
 internal val logger = LoggerFactory.getLogger("io.github.chugaev.gradlebuildstats.GradleBuildStatsPlugin")
 
+interface GradleBuildStatsPluginExtension {
+    val disabled: Property<Boolean>
+}
+
 class GradleBuildStatsPlugin @Inject constructor(
     private val registry: BuildEventsListenerRegistry,
     private val buildStartedTime: BuildStartedTime,
@@ -31,8 +35,19 @@ class GradleBuildStatsPlugin @Inject constructor(
 ) : Plugin<Project> {
 
     override fun apply(project: Project) {
+        val extension = project.extensions.create("gradleBuildStats", GradleBuildStatsPluginExtension::class.java)
+        project.afterEvaluate {
+            doApply(project, extension)
+        }
+    }
+
+    private fun doApply(project: Project, extension: GradleBuildStatsPluginExtension) {
+        if (extension.disabled.getOrElse(false)) {
+            logger.info("Plugin disabled")
+            return
+        }
         val pluginConfig = readConfig(project)
-        if (!pluginConfig.enabled) {
+        if (!pluginConfig.disabled) {
             logger.info("Plugin disabled")
             return
         }
@@ -117,7 +132,7 @@ class GradleBuildStatsPlugin @Inject constructor(
     }
 }
 
-class GradleBuildStatsCompletedAction : FlowAction<GradleBuildStatsCompletedAction.Parameters> {
+internal class GradleBuildStatsCompletedAction : FlowAction<GradleBuildStatsCompletedAction.Parameters> {
 
     interface Parameters : FlowParameters {
 
