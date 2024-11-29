@@ -22,7 +22,7 @@ abstract class GradleBuildStatsTaskCompletionService : BuildService<BuildService
         getReportWriterService().get()
     }
 
-//    var lastKnownTask: String? = null
+    private var lastKnownTask: String? = null
 
     override fun onFinish(e: FinishEvent?) {
         (e as? TaskFinishEvent)?.let { event ->
@@ -42,13 +42,13 @@ abstract class GradleBuildStatsTaskCompletionService : BuildService<BuildService
                 status = status
             )
             reportWriterService.addTask(taskInfo)
-//            lastKnownTask = event.descriptor.taskPath
+            lastKnownTask = event.descriptor.taskPath
         }
     }
 
-//    fun onBuildCompleted() {
-//
-//    }
+    fun getLastKnownTask(): String? {
+        return lastKnownTask
+    }
 
     data class TaskInfo(val taskPath: String, val duration: Duration, val status: TaskStatus) {
         sealed interface TaskStatus {

@@ -60,15 +60,11 @@ gradlePlugin {
         create("gradle-build-stats") {
             id = "io.github.aleksey-chugaev.gradlebuildstats"
             displayName = "Gradle Build Stats Plugin"
-            description = "A Gradle plugin to record the times it takes for gradle tasks to complete"
+            description = "A Gradle plugin to track and record tasks that are executed during a Gradle build and the time it takes for tasks to complete."
             tags = listOf("performance")
             implementationClass = "io.github.chugaev.gradlebuildstats.GradleBuildStatsPlugin"
         }
     }
-//    val greeting by plugins.creating {
-//        id = "com.snapshot.gradle.GradleBuildStatsPlugin"
-//        implementationClass = "com.snapshot.gradle.GradleBuildStatsPlugin"
-//    }
 }
 
 gradlePlugin.testSourceSets.add(sourceSets["functionalTest"])
@@ -79,15 +75,6 @@ tasks.named<Task>("check") {
 }
 
 publishing {
-//    publications {
-//        create<MavenPublication>("maven") {
-//            groupId = "com.snapshot.gradle"
-//            artifactId = "gradle-build-stats-plugin"
-//            version = "0.0.1"
-//
-//            from(components["java"])
-//        }
-//    }
     repositories {
         mavenLocal()
     }

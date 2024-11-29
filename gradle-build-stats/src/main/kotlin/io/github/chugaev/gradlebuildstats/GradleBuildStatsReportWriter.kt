@@ -46,6 +46,10 @@ abstract class GradleBuildStatsReportWriterService : BuildService<GradleBuildSta
         logger.debug("finish")
         buildStatsFileWriter?.finish(buildStatus, buildDuration)
     }
+
+    fun deleteReport() {
+        buildStatsFileWriter?.deleteReport()
+    }
 }
 
 interface GradleBuildStatsReportWriter {
@@ -55,6 +59,8 @@ interface GradleBuildStatsReportWriter {
     fun finish(buildStatus: String, buildDuration: Duration)
 
     fun addTask(taskInfo: TaskInfo)
+
+    fun deleteReport()
 
     companion object {
         fun createReportWriter(
@@ -147,5 +153,10 @@ private class BufferedReportFileWriter(private val file: File) : GradleBuildStat
         fileWriter.appendLine("- path: \"${taskInfo.taskPath}\"")
         fileWriter.appendLine("  duration: ${taskInfo.duration.inWholeMilliseconds}")
         fileWriter.appendLine("  status: \"${taskInfo.status.describe()}\"")
+    }
+
+    override fun deleteReport() {
+        fileWriter.close()
+        file.delete()
     }
 }

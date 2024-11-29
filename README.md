@@ -6,6 +6,7 @@ A Gradle plugin to track and record tasks that are executed during a Gradle buil
 version: 1
 project: "SampleProjectName"
 buildTaskNames:
+- ":app:clean"
 - ":app:assembleDebug"
 buildStartTime: 1732100673107
 taskDetails:
@@ -23,7 +24,7 @@ buildDuration: 12881
 Duration fields are in milliseconds.
 Date/time fields are in epoch milliseconds.
 
-By default, the files are saved in the project build folder, e.g. `{PROJECT_DIR}/build/reports/gradle-build-stats/2024-11-20--10-49-17.yaml`.
+By default, the files are saved in the project build folder, e.g. `{PROJECT_DIR}/build/reports/gradle-build-stats/2024-11-20--10-49-17-app-assembledebug.yaml`.
 
 ## Set up
 
@@ -71,6 +72,6 @@ Sample file:
 ```
 disabled=false
 buildStatsHomePath=/Users/myself/reports/gradle-build-stats
-disabledForTasksWithName=clean
+disabledForTasksWithName=clean,prepareKotlinBuildScriptModel
 enabledForTasksWithName=
 ```

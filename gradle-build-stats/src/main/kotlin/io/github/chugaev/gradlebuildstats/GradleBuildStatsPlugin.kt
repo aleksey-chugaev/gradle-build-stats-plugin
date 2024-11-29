@@ -47,11 +47,14 @@ class GradleBuildStatsPlugin @Inject constructor(
             return
         }
         val pluginConfig = readConfig(project)
-        if (!pluginConfig.disabled) {
+        if (pluginConfig.disabled) {
             logger.info("Plugin disabled")
             return
         }
-        val taskNames = project.gradle.startParameter.taskNames.takeIf { it.isNotEmpty() } ?: project.defaultTasks
+        var taskNames = project.gradle.startParameter.taskNames.mapNotNull { it.takeIf { it.isNotBlank() } }
+        if (taskNames.isEmpty()) {
+            taskNames = project.defaultTasks
+        }
         if (!isEnabledForTaskNames(taskNames, pluginConfig)) {
             logger.info("Plugin disabled for tasks '${taskNames.joinToString()}'")
             return
@@ -98,38 +101,40 @@ class GradleBuildStatsPlugin @Inject constructor(
 
         flowScope.always(GradleBuildStatsCompletedAction::class.java) { spec ->
             spec.parameters.buildResult.set(flowProviders.buildWorkResult)
+            spec.parameters.pluginConfig.set(pluginConfig)
             spec.parameters.startTimeMillis.set(buildStartedTime.startTime)
+            spec.parameters.taskNamesUnknown.set(taskNames.isEmpty())
         }
     }
+}
 
-    private fun isEnabledForTaskNames(taskNames: List<String>, pluginConfig: GradleBuildStatsConfig): Boolean {
-        if (taskNames.isEmpty()) {
+private fun isEnabledForTaskNames(taskNames: List<String>, pluginConfig: GradleBuildStatsConfig): Boolean {
+    if (taskNames.isEmpty()) {
+        return true
+    }
+    logger.debug("config enabledForTasksWithName ${pluginConfig.enabledForTasksWithName}")
+    if (pluginConfig.enabledForTasksWithName.any { it.isNotBlank() }) {
+        if (pluginConfig.enabledForTasksWithName.any { enabledTaskName ->
+                taskNames.any { taskName ->
+                    taskName.endsWith(enabledTaskName, ignoreCase = true)
+                }
+            }) {
             return true
         }
-        if (pluginConfig.enabledForTasksWithName.isNotEmpty()) {
-            logger.debug("enabledForTasksWithName ${pluginConfig.enabledForTasksWithName}")
-            if (pluginConfig.enabledForTasksWithName.any { enabledTaskName ->
-                    taskNames.any { taskName ->
-                        taskName.endsWith(enabledTaskName)
-                    }
-                }) {
-                return true
-            }
+        return false
+    }
+    logger.debug("config disabledForTasksWithName ${pluginConfig.disabledForTasksWithName}")
+    if (pluginConfig.disabledForTasksWithName.any { it.isNotBlank() }) {
+        if (pluginConfig.disabledForTasksWithName.any { disabledTaskName ->
+                taskNames.any { taskName ->
+                    taskName.endsWith(disabledTaskName, ignoreCase = true)
+                }
+            }) {
             return false
-        }
-        if (pluginConfig.disabledForTasksWithName.isNotEmpty()) {
-            logger.debug("disabledForTasksWithName ${pluginConfig.disabledForTasksWithName}")
-            if (pluginConfig.disabledForTasksWithName.any { disabledTaskName ->
-                    taskNames.any { taskName ->
-                        taskName.endsWith(disabledTaskName)
-                    }
-                }) {
-                return false
-            }
-            return true
         }
         return true
     }
+    return true
 }
 
 internal class GradleBuildStatsCompletedAction : FlowAction<GradleBuildStatsCompletedAction.Parameters> {
@@ -140,7 +145,13 @@ internal class GradleBuildStatsCompletedAction : FlowAction<GradleBuildStatsComp
         val buildResult: Property<BuildWorkResult>
 
         @get:Input
+        val pluginConfig: Property<GradleBuildStatsConfig>
+
+        @get:Input
         val startTimeMillis: Property<Long>
+
+        @get:Input
+        val taskNamesUnknown: Property<Boolean>
 
         @get:ServiceReference
         val taskCompletionService: Property<GradleBuildStatsTaskCompletionService>
@@ -153,6 +164,20 @@ internal class GradleBuildStatsCompletedAction : FlowAction<GradleBuildStatsComp
         val reportWriterService = parameters.reportWriterService.orNull ?: run {
             logger.warn("GradleBuildStatsCompletedAction: missing reportWriterService")
             return
+        }
+
+        val taskNamesUnknown = parameters.taskNamesUnknown.orNull ?: false
+        if (taskNamesUnknown) {
+            val taskCompletionService = parameters.taskCompletionService.orNull
+            val lastKnownTask = taskCompletionService?.getLastKnownTask()
+            val pluginConfig = parameters.pluginConfig.orNull
+            if (pluginConfig != null && lastKnownTask != null) {
+                if (!isEnabledForTaskNames(listOf(lastKnownTask), pluginConfig)) {
+                    logger.info("Plugin disabled for task '$lastKnownTask'")
+                    reportWriterService.deleteReport()
+                    return
+                }
+            }
         }
 
         val startTimeMillis = parameters.startTimeMillis.orNull ?: run {

@@ -33,7 +33,7 @@ data class GradleBuildStatsConfig(
         private fun load(properties: Properties, project: Project): GradleBuildStatsConfig {
             val buildStatsHomePath =
                 properties[BUILD_STATS_HOME_PATH_PROP_NAME]?.toString() ?: getBuildStatsHomePath(project)
-            val disabled = properties[DISABLED_PROP_NAME]?.toString()?.toBoolean() ?: true
+            val disabled = properties[DISABLED_PROP_NAME]?.toString()?.toBoolean() ?: false
             val enabledForTasksWithName =
                 properties[ENABLED_FOR_TASKS_WITH_NAME_PROP_NAME]?.toString()?.split(",") ?: emptyList()
             val disabledForTasksWithName =
