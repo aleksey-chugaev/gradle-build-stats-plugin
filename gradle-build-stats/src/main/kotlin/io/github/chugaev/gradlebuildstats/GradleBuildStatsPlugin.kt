@@ -87,7 +87,7 @@ class GradleBuildStatsPlugin @Inject constructor(
             "com.snapshot.gradle.GradleBuildStatsReportWriterService",
             GradleBuildStatsReportWriterService::class.java
         ) { spec ->
-            spec.parameters.buildStartTime = buildStartTime
+            spec.parameters.buildStartTimeMillis = buildStartedTime.startTime
             spec.parameters.pluginConfig = pluginConfig
             spec.parameters.taskNames = taskNames
             spec.parameters.projectName = project.name

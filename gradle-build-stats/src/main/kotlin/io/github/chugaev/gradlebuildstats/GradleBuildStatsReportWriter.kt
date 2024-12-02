@@ -22,14 +22,16 @@ import org.gradle.api.services.BuildServiceParameters
 import java.io.BufferedWriter
 import java.io.File
 import java.io.FileWriter
+import java.time.Instant
 import java.time.LocalDateTime
+import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 import kotlin.time.Duration
 
 abstract class GradleBuildStatsReportWriterService : BuildService<GradleBuildStatsReportWriterService.Parameters> {
 
     interface Parameters : BuildServiceParameters {
-        var buildStartTime: LocalDateTime
+        var buildStartTimeMillis: Long
         var pluginConfig: GradleBuildStatsConfig
         var taskNames: List<String>
         var projectName: String
@@ -38,7 +40,8 @@ abstract class GradleBuildStatsReportWriterService : BuildService<GradleBuildSta
     private val buildStatsFileWriter: GradleBuildStatsReportWriter? by lazy {
         GradleBuildStatsReportWriter.createReportWriter(
             pluginConfig = parameters.pluginConfig,
-            buildStartTime = parameters.buildStartTime,
+            buildStartTime = Instant.ofEpochMilli(parameters.buildStartTimeMillis).atZone(ZoneId.systemDefault())
+                .toLocalDateTime(),
             projectName = parameters.projectName,
             taskNames = parameters.taskNames
         )
