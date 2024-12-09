@@ -18,7 +18,9 @@ package io.github.chugaev.gradlebuildstats
 
 import org.gradle.api.Project
 import java.io.Serializable
-import java.util.Properties
+import java.util.*
+
+private val logger = getLogger("GradleBuildStatsConfig")
 
 data class GradleBuildStatsConfig(
     val disabled: Boolean,
@@ -43,10 +45,13 @@ data class GradleBuildStatsConfig(
                 load(properties, project)
             } else {
                 load(project)
+            }.also {
+                logger.debug(it.toString())
             }
         }
 
         private fun load(properties: Properties, project: Project): GradleBuildStatsConfig {
+            logger.debug("Loading config from properties")
             val buildStatsHomePath =
                 properties[BUILD_STATS_HOME_PATH_PROP_NAME]?.toString() ?: getBuildStatsHomePath(project)
             val disabled = properties[DISABLED_PROP_NAME]?.toString()?.toBoolean() ?: false
@@ -63,9 +68,10 @@ data class GradleBuildStatsConfig(
         }
 
         private fun load(project: Project): GradleBuildStatsConfig {
+            logger.debug("Loading default config")
             val buildStatsHomePath = getBuildStatsHomePath(project)
             return GradleBuildStatsConfig(
-                disabled = true,
+                disabled = false,
                 buildStatsHomePath = buildStatsHomePath,
                 enabledForTasksWithName = emptyList(),
                 disabledForTasksWithName = emptyList(),

@@ -28,6 +28,8 @@ import org.gradle.tooling.events.task.TaskSuccessResult
 import kotlin.time.Duration
 import kotlin.time.Duration.Companion.milliseconds
 
+private val logger = getLogger("GradleBuildStatsTaskCompletionService")
+
 abstract class GradleBuildStatsTaskCompletionService : BuildService<BuildServiceParameters.None>,
     OperationCompletionListener {
 
@@ -38,10 +40,16 @@ abstract class GradleBuildStatsTaskCompletionService : BuildService<BuildService
         getReportWriterService().get()
     }
 
+    private var buildStartTimeMillis: Long = -1
     private var lastKnownTask: String? = null
+
+    fun getBuildStartTime() = buildStartTimeMillis
 
     override fun onFinish(e: FinishEvent?) {
         (e as? TaskFinishEvent)?.let { event ->
+            if (buildStartTimeMillis < 0) {
+                buildStartTimeMillis = event.result.startTime
+            }
             logger.debug("taskFinished ${event.descriptor.taskPath} ${event.result.endTime - event.result.startTime}")
             val status = when (val result = event.result) {
                 is TaskSuccessResult -> TaskInfo.TaskStatus.Success(

@@ -28,16 +28,12 @@ import org.gradle.api.provider.Property
 import org.gradle.api.services.ServiceReference
 import org.gradle.api.tasks.Input
 import org.gradle.build.event.BuildEventsListenerRegistry
-import org.gradle.internal.buildevents.BuildStartedTime
 import org.gradle.internal.time.Time
-import org.slf4j.LoggerFactory
-import java.time.Instant
-import java.time.ZoneId
 import javax.inject.Inject
 import kotlin.time.DurationUnit
 import kotlin.time.toDuration
 
-internal val logger = LoggerFactory.getLogger("io.github.chugaev.gradlebuildstats.GradleBuildStatsPlugin")
+private val logger = getLogger("GradleBuildStatsPlugin")
 
 interface GradleBuildStatsPluginExtension {
     val disabled: Property<Boolean>
@@ -45,12 +41,12 @@ interface GradleBuildStatsPluginExtension {
 
 class GradleBuildStatsPlugin @Inject constructor(
     private val registry: BuildEventsListenerRegistry,
-    private val buildStartedTime: BuildStartedTime,
     private val flowScope: FlowScope,
     private val flowProviders: FlowProviders,
 ) : Plugin<Project> {
 
     override fun apply(project: Project) {
+        logger.debug("apply")
         val extension = project.extensions.create("gradleBuildStats", GradleBuildStatsPluginExtension::class.java)
         project.afterEvaluate {
             doApply(project, extension)
@@ -58,41 +54,35 @@ class GradleBuildStatsPlugin @Inject constructor(
     }
 
     private fun doApply(project: Project, extension: GradleBuildStatsPluginExtension) {
+        logger.debug("afterEvaluate")
         if (extension.disabled.getOrElse(false)) {
-            logger.info("Plugin disabled")
+            logger.info("Plugin disabled (via extension)")
             return
         }
         val pluginConfig = readConfig(project)
         if (pluginConfig.disabled) {
-            logger.info("Plugin disabled")
+            logger.info("Plugin disabled (via config)")
             return
         }
         var taskNames = project.gradle.startParameter.taskNames.mapNotNull { it.takeIf { it.isNotBlank() } }
         if (taskNames.isEmpty()) {
             taskNames = project.defaultTasks
         }
+        logger.debug("taskNames=$taskNames")
         if (!isEnabledForTaskNames(taskNames, pluginConfig)) {
             logger.info("Plugin disabled for tasks '${taskNames.joinToString()}'")
             return
         }
 
-        val buildStartTime = try {
-            Instant.ofEpochMilli(buildStartedTime.startTime).atZone(ZoneId.systemDefault()).toLocalDateTime()
-        } catch (e: Throwable) {
-            logger.warn("Failed to obtain build started time", e)
-            return
-        }
-
-        val reportWriterService = project.gradle.sharedServices.registerIfAbsent(
+        project.gradle.sharedServices.registerIfAbsent(
             "com.snapshot.gradle.GradleBuildStatsReportWriterService",
             GradleBuildStatsReportWriterService::class.java
         ) { spec ->
-            spec.parameters.buildStartTimeMillis = buildStartedTime.startTime
             spec.parameters.pluginConfig = pluginConfig
             spec.parameters.taskNames = taskNames
             spec.parameters.projectName = project.name
         }.orNull ?: run {
-            logger.warn("Failed to retrieve GradleBuildStatsReportWriterService")
+            logger.warn("Failed to register GradleBuildStatsReportWriterService")
             return
         }
 
@@ -101,24 +91,15 @@ class GradleBuildStatsPlugin @Inject constructor(
             GradleBuildStatsTaskCompletionService::class.java
         ) { }
         if (!taskTrackerService.isPresent) {
-            logger.warn("Failed to initialise GradleBuildStatsTaskCompletionService")
+            logger.warn("Failed to register GradleBuildStatsTaskCompletionService")
             return
         }
-
-        if (!reportWriterService.initialise()) {
-            logger.warn("Failed to initialise GradleBuildStatsReportWriterService")
-            return
-        }
-        logger.debug("GradleBuildStatsPlugin taskNames=$taskNames buildStartTime=$buildStartTime")
-
-        reportWriterService.startReport(project.name, taskNames, buildStartedTime.startTime)
 
         registry.onTaskCompletion(taskTrackerService)
 
         flowScope.always(GradleBuildStatsCompletedAction::class.java) { spec ->
             spec.parameters.buildResult.set(flowProviders.buildWorkResult)
             spec.parameters.pluginConfig.set(pluginConfig)
-            spec.parameters.startTimeMillis.set(buildStartedTime.startTime)
             spec.parameters.taskNamesUnknown.set(taskNames.isEmpty())
         }
     }
@@ -128,7 +109,6 @@ private fun isEnabledForTaskNames(taskNames: List<String>, pluginConfig: GradleB
     if (taskNames.isEmpty()) {
         return true
     }
-    logger.debug("config enabledForTasksWithName ${pluginConfig.enabledForTasksWithName}")
     if (pluginConfig.enabledForTasksWithName.any { it.isNotBlank() }) {
         if (pluginConfig.enabledForTasksWithName.any { enabledTaskName ->
                 taskNames.any { taskName ->
@@ -139,7 +119,6 @@ private fun isEnabledForTaskNames(taskNames: List<String>, pluginConfig: GradleB
         }
         return false
     }
-    logger.debug("config disabledForTasksWithName ${pluginConfig.disabledForTasksWithName}")
     if (pluginConfig.disabledForTasksWithName.any { it.isNotBlank() }) {
         if (pluginConfig.disabledForTasksWithName.any { disabledTaskName ->
                 taskNames.any { taskName ->
@@ -155,6 +134,8 @@ private fun isEnabledForTaskNames(taskNames: List<String>, pluginConfig: GradleB
 
 internal class GradleBuildStatsCompletedAction : FlowAction<GradleBuildStatsCompletedAction.Parameters> {
 
+    private val logger = getLogger("GradleBuildStatsCompletedAction")
+
     interface Parameters : FlowParameters {
 
         @get:Input
@@ -162,9 +143,6 @@ internal class GradleBuildStatsCompletedAction : FlowAction<GradleBuildStatsComp
 
         @get:Input
         val pluginConfig: Property<GradleBuildStatsConfig>
-
-        @get:Input
-        val startTimeMillis: Property<Long>
 
         @get:Input
         val taskNamesUnknown: Property<Boolean>
@@ -178,14 +156,17 @@ internal class GradleBuildStatsCompletedAction : FlowAction<GradleBuildStatsComp
 
     override fun execute(parameters: Parameters) {
         val reportWriterService = parameters.reportWriterService.orNull ?: run {
-            logger.warn("GradleBuildStatsCompletedAction: missing reportWriterService")
+            logger.warn("missing reportWriterService")
+            return
+        }
+        val taskCompletionService = parameters.taskCompletionService.orNull ?: run {
+            logger.warn("missing taskCompletionService")
             return
         }
 
         val taskNamesUnknown = parameters.taskNamesUnknown.orNull ?: false
         if (taskNamesUnknown) {
-            val taskCompletionService = parameters.taskCompletionService.orNull
-            val lastKnownTask = taskCompletionService?.getLastKnownTask()
+            val lastKnownTask = taskCompletionService.getLastKnownTask()
             val pluginConfig = parameters.pluginConfig.orNull
             if (pluginConfig != null && lastKnownTask != null) {
                 if (!isEnabledForTaskNames(listOf(lastKnownTask), pluginConfig)) {
@@ -196,16 +177,8 @@ internal class GradleBuildStatsCompletedAction : FlowAction<GradleBuildStatsComp
             }
         }
 
-        val startTimeMillis = parameters.startTimeMillis.orNull ?: run {
-            logger.warn("GradleBuildStatsCompletedAction: missing startTimeMillis")
-            reportWriterService.finish("FAILURE", 0L.toDuration(DurationUnit.MILLISECONDS))
-            return
-        }
-        val duration = (Time.currentTimeMillis() - startTimeMillis).toDuration(
-            DurationUnit.MILLISECONDS
-        )
         val buildResult = parameters.buildResult.orNull ?: run {
-            logger.warn("GradleBuildStatsCompletedAction: missing buildResult")
+            logger.warn("missing buildResult")
             reportWriterService.finish("FAILURE", 0L.toDuration(DurationUnit.MILLISECONDS))
             return
         }
@@ -216,6 +189,11 @@ internal class GradleBuildStatsCompletedAction : FlowAction<GradleBuildStatsComp
         } else {
             "FAILED"
         }
+
+        val buildStartTimeMillis = taskCompletionService.getBuildStartTime()
+        val duration = (Time.currentTimeMillis() - buildStartTimeMillis).toDuration(
+            DurationUnit.MILLISECONDS
+        )
         reportWriterService.finish(status, duration)
     }
 }
