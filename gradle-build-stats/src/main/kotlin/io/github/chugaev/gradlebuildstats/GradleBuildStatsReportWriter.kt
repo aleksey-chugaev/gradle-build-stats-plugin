@@ -41,41 +41,56 @@ abstract class GradleBuildStatsReportWriterService : BuildService<GradleBuildSta
 
     private lateinit var buildStatsFileWriter: GradleBuildStatsReportWriter
 
-    private fun ensureBuildStatsFileWriter(taskInfo: TaskInfo): Boolean {
+    private fun ensureBuildStatsFileWriter(taskInfo: TaskInfo? = null): Boolean {
         if (!::buildStatsFileWriter.isInitialized) {
-            val buildStartTimeMillis = Time.currentTimeMillis() - taskInfo.duration.inWholeMilliseconds
-            val buildStartTime =
-                Instant.ofEpochMilli(buildStartTimeMillis).atZone(ZoneId.systemDefault()).toLocalDateTime()
-            logger.debug(
-                "buildStartTime: ${
-                    DateTimeFormatter.ofPattern("yyyy-MM-dd--HH-mm-ss").format(buildStartTime)
-                }"
-            )
-            buildStatsFileWriter = GradleBuildStatsReportWriter.createReportWriter(
-                pluginConfig = parameters.pluginConfig,
-                buildStartTime = buildStartTime,
-                projectName = parameters.projectName,
-                taskNames = parameters.taskNames
-            )?.also {
-                it.start(parameters.projectName, parameters.taskNames, buildStartTimeMillis)
-            } ?: NoOpGradleBuildStatsReportWriter
+            synchronized(this) {
+                if (!::buildStatsFileWriter.isInitialized) {
+                    val buildStartTimeMillis = Time.currentTimeMillis() - (taskInfo?.duration?.inWholeMilliseconds ?: 0L)
+                    val buildStartTime =
+                        Instant.ofEpochMilli(buildStartTimeMillis).atZone(ZoneId.systemDefault()).toLocalDateTime()
+                    logger.debug(
+                        "buildStartTime: ${
+                            DateTimeFormatter.ofPattern("yyyy-MM-dd--HH-mm-ss").format(buildStartTime)
+                        }"
+                    )
+                    buildStatsFileWriter = GradleBuildStatsReportWriter.createReportWriter(
+                        pluginConfig = parameters.pluginConfig,
+                        buildStartTime = buildStartTime,
+                        projectName = parameters.projectName,
+                        taskNames = parameters.taskNames
+                    )?.also {
+                        it.start(parameters.projectName, parameters.taskNames, buildStartTimeMillis)
+                    } ?: NoOpGradleBuildStatsReportWriter
+                }
+            }
         }
         return buildStatsFileWriter !is NoOpGradleBuildStatsReportWriter
     }
 
     fun addTask(taskInfo: TaskInfo) {
-        ensureBuildStatsFileWriter(taskInfo)
-        buildStatsFileWriter.addTask(taskInfo)
+        if (ensureBuildStatsFileWriter(taskInfo)) {
+            buildStatsFileWriter.addTask(taskInfo)
+        } else {
+            logger.warn("buildStatsFileWriter not initialised (addTask)")
+        }
     }
 
     fun finish(buildStatus: String, buildDuration: Duration) {
         logger.debug("finish")
-        buildStatsFileWriter.finish(buildStatus, buildDuration)
+        if (ensureBuildStatsFileWriter()) {
+            buildStatsFileWriter.finish(buildStatus, buildDuration)
+        } else {
+            logger.warn("buildStatsFileWriter not initialised (finish)")
+        }
     }
 
     fun deleteReport() {
         logger.debug("deleteReport")
-        buildStatsFileWriter.deleteReport()
+        if (ensureBuildStatsFileWriter()) {
+            buildStatsFileWriter.deleteReport()
+        } else {
+            logger.warn("buildStatsFileWriter not initialised (deleteReport)")
+        }
     }
 }
 
