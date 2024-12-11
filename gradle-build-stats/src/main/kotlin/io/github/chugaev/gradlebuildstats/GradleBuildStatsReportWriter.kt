@@ -153,7 +153,7 @@ interface GradleBuildStatsReportWriter {
             }
             logger.debug("buildStatsFileName $buildStatsFileName")
 
-            val buildStatsFile = File(buildStatsHomeDir, "$buildStatsFileName.yaml")
+            val buildStatsFile = File(buildStatsHomeDir, "$buildStatsFileName.tmp")
             if (!buildStatsFile.createNewFile()) {
                 logger.warn("cannot create buildStatsFile $buildStatsFile")
                 return null
@@ -180,35 +180,45 @@ private class BufferedReportFileWriter(private val file: File) : GradleBuildStat
     }
 
     override fun start(projectName: String, taskNames: List<String>, buildStartTimeMillis: Long) {
-        fileWriter.appendLine("version: 1")
-        fileWriter.appendLine("project: $projectName")
-        fileWriter.appendLine("buildTaskNames:")
-        taskNames.forEach { taskName ->
-            fileWriter.appendLine("- \"$taskName\"")
+        synchronized(this) {
+            fileWriter.appendLine("version: 1")
+            fileWriter.appendLine("project: $projectName")
+            fileWriter.appendLine("buildTaskNames:")
+            taskNames.forEach { taskName ->
+                fileWriter.appendLine("- \"$taskName\"")
+            }
+            fileWriter.appendLine("buildStartTime: $buildStartTimeMillis")
         }
-        fileWriter.appendLine("buildStartTime: $buildStartTimeMillis")
     }
 
     override fun finish(buildStatus: String, buildDuration: Duration) {
-        fileWriter.appendLine("buildStatus: \"$buildStatus\"")
-        fileWriter.appendLine("buildDuration: ${buildDuration.inWholeMilliseconds}")
-        fileWriter.close()
+        synchronized(this) {
+            fileWriter.appendLine("buildStatus: \"$buildStatus\"")
+            fileWriter.appendLine("buildDuration: ${buildDuration.inWholeMilliseconds}")
+            fileWriter.close()
+            val renameFilePath = file.absolutePath.substringBeforeLast(".") + ".yaml"
+            file.renameTo(File(renameFilePath))
+        }
     }
 
     private var isAddingTasks = false
 
     override fun addTask(taskInfo: TaskInfo) {
-        if (!isAddingTasks) {
-            fileWriter.appendLine("taskDetails:")
-            isAddingTasks = true
+        synchronized(this) {
+            if (!isAddingTasks) {
+                fileWriter.appendLine("taskDetails:")
+                isAddingTasks = true
+            }
+            fileWriter.appendLine("- path: \"${taskInfo.taskPath}\"")
+            fileWriter.appendLine("  duration: ${taskInfo.duration.inWholeMilliseconds}")
+            fileWriter.appendLine("  status: \"${taskInfo.status.describe()}\"")
         }
-        fileWriter.appendLine("- path: \"${taskInfo.taskPath}\"")
-        fileWriter.appendLine("  duration: ${taskInfo.duration.inWholeMilliseconds}")
-        fileWriter.appendLine("  status: \"${taskInfo.status.describe()}\"")
     }
 
     override fun deleteReport() {
-        fileWriter.close()
-        file.delete()
+        synchronized(this) {
+            fileWriter.close()
+            file.delete()
+        }
     }
 }
