@@ -46,7 +46,7 @@ class GradleBuildStatsPlugin @Inject constructor(
 ) : Plugin<Project> {
 
     override fun apply(project: Project) {
-        logger.debug("apply")
+        logger.debug("apply ${hashCode()}")
         val extension = project.extensions.create("gradleBuildStats", GradleBuildStatsPluginExtension::class.java)
         project.afterEvaluate {
             doApply(project, extension)
@@ -155,6 +155,7 @@ internal class GradleBuildStatsCompletedAction : FlowAction<GradleBuildStatsComp
     }
 
     override fun execute(parameters: Parameters) {
+        logger.debug("execute")
         val reportWriterService = parameters.reportWriterService.orNull ?: run {
             logger.warn("missing reportWriterService")
             return

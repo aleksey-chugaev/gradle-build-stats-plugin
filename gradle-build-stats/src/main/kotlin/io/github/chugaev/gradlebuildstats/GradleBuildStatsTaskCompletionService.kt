@@ -50,7 +50,7 @@ abstract class GradleBuildStatsTaskCompletionService : BuildService<BuildService
             if (buildStartTimeMillis < 0) {
                 buildStartTimeMillis = event.result.startTime
             }
-            logger.debug("taskFinished ${event.descriptor.taskPath} ${event.result.endTime - event.result.startTime}")
+//            logger.debug("taskFinished ${event.descriptor.taskPath} ${event.result.endTime - event.result.startTime}")
             val status = when (val result = event.result) {
                 is TaskSuccessResult -> TaskInfo.TaskStatus.Success(
                     upToDate = result.isUpToDate,

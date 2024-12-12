@@ -25,7 +25,7 @@ plugins {
 }
 
 group = "io.github.aleksey-chugaev.gradlebuildstats"
-version = "0.0.6"
+version = "0.0.7"
 
 repositories {
     // Use Maven Central for resolving dependencies.

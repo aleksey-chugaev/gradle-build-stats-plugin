@@ -33,6 +33,10 @@ private val logger = getLogger("GradleBuildStatsReportWriterService")
 
 abstract class GradleBuildStatsReportWriterService : BuildService<GradleBuildStatsReportWriterService.Parameters> {
 
+    init {
+        logger.debug("init")
+    }
+
     interface Parameters : BuildServiceParameters {
         var pluginConfig: GradleBuildStatsConfig
         var taskNames: List<String>
@@ -49,7 +53,7 @@ abstract class GradleBuildStatsReportWriterService : BuildService<GradleBuildSta
                     val buildStartTime =
                         Instant.ofEpochMilli(buildStartTimeMillis).atZone(ZoneId.systemDefault()).toLocalDateTime()
                     logger.debug(
-                        "buildStartTime: ${
+                        "init buildStatsFileWriter ${hashCode()}, buildStartTime: ${
                             DateTimeFormatter.ofPattern("yyyy-MM-dd--HH-mm-ss").format(buildStartTime)
                         }"
                     )
@@ -130,6 +134,7 @@ interface GradleBuildStatsReportWriter {
             projectName: String,
             taskNames: List<String>,
         ): File? {
+            logger.debug("createBuildStatsFile")
             val buildStatsHomeDir = File(pluginConfig.buildStatsHomePath)
             buildStatsHomeDir.mkdirs()
             if (!buildStatsHomeDir.exists()) {
@@ -150,10 +155,11 @@ interface GradleBuildStatsReportWriter {
                 if (tasks.isNotEmpty()) {
                     append("-").append(tasks)
                 }
+                append(".tmp")
             }
-            logger.debug("buildStatsFileName $buildStatsFileName")
+            logger.debug("buildStatsFileName: $buildStatsFileName")
 
-            val buildStatsFile = File(buildStatsHomeDir, "$buildStatsFileName.tmp")
+            val buildStatsFile = File(buildStatsHomeDir, buildStatsFileName)
             if (!buildStatsFile.createNewFile()) {
                 logger.warn("cannot create buildStatsFile $buildStatsFile")
                 return null
@@ -175,12 +181,20 @@ private data object NoOpGradleBuildStatsReportWriter : GradleBuildStatsReportWri
 
 private class BufferedReportFileWriter(private val file: File) : GradleBuildStatsReportWriter {
 
+    private val logger = getLogger("BufferedReportFileWriter")
+
+    init {
+        logger.debug("init file: ${file.absolutePath}")
+    }
+
     private val fileWriter by lazy {
+        logger.debug("init fileWriter")
         BufferedWriter(FileWriter(file, false))
     }
 
     override fun start(projectName: String, taskNames: List<String>, buildStartTimeMillis: Long) {
         synchronized(this) {
+            logger.debug("start")
             fileWriter.appendLine("version: 1")
             fileWriter.appendLine("project: $projectName")
             fileWriter.appendLine("buildTaskNames:")
@@ -193,11 +207,13 @@ private class BufferedReportFileWriter(private val file: File) : GradleBuildStat
 
     override fun finish(buildStatus: String, buildDuration: Duration) {
         synchronized(this) {
+            logger.debug("finish")
             fileWriter.appendLine("buildStatus: \"$buildStatus\"")
             fileWriter.appendLine("buildDuration: ${buildDuration.inWholeMilliseconds}")
             fileWriter.close()
             val renameFilePath = file.absolutePath.substringBeforeLast(".") + ".yaml"
-            file.renameTo(File(renameFilePath))
+            val isSuccess = file.renameTo(File(renameFilePath))
+            logger.debug("renameTo result: $isSuccess")
         }
     }
 
@@ -205,6 +221,7 @@ private class BufferedReportFileWriter(private val file: File) : GradleBuildStat
 
     override fun addTask(taskInfo: TaskInfo) {
         synchronized(this) {
+            logger.debug("addTask ${taskInfo.taskPath} ${taskInfo.duration.inWholeMilliseconds}")
             if (!isAddingTasks) {
                 fileWriter.appendLine("taskDetails:")
                 isAddingTasks = true
@@ -217,8 +234,10 @@ private class BufferedReportFileWriter(private val file: File) : GradleBuildStat
 
     override fun deleteReport() {
         synchronized(this) {
+            logger.debug("deleteReport")
             fileWriter.close()
-            file.delete()
+            val isSuccess = file.delete()
+            logger.debug("deleteReport result: $isSuccess")
         }
     }
 }
