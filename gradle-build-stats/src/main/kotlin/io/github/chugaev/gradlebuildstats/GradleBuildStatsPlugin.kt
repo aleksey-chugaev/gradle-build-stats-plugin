@@ -147,10 +147,10 @@ internal class GradleBuildStatsCompletedAction : FlowAction<GradleBuildStatsComp
         @get:Input
         val taskNamesUnknown: Property<Boolean>
 
-        @get:ServiceReference
+        @get:ServiceReference("com.snapshot.gradle.GradleBuildStatsTaskCompletionService")
         val taskCompletionService: Property<GradleBuildStatsTaskCompletionService>
 
-        @get:ServiceReference
+        @get:ServiceReference("com.snapshot.gradle.GradleBuildStatsReportWriterService")
         val reportWriterService: Property<GradleBuildStatsReportWriterService>
     }
 
