@@ -74,14 +74,15 @@ class GradleBuildStatsPlugin @Inject constructor(
             return
         }
 
-        project.gradle.sharedServices.registerIfAbsent(
+        val reportWriterServiceProvider = project.gradle.sharedServices.registerIfAbsent(
             "com.snapshot.gradle.GradleBuildStatsReportWriterService",
             GradleBuildStatsReportWriterService::class.java
         ) { spec ->
             spec.parameters.pluginConfig = pluginConfig
             spec.parameters.taskNames = taskNames
             spec.parameters.projectName = project.name
-        }.orNull ?: run {
+        }
+        if (!reportWriterServiceProvider.isPresent) {
             logger.warn("Failed to register GradleBuildStatsReportWriterService")
             return
         }
@@ -101,6 +102,7 @@ class GradleBuildStatsPlugin @Inject constructor(
             spec.parameters.buildResult.set(flowProviders.buildWorkResult)
             spec.parameters.pluginConfig.set(pluginConfig)
             spec.parameters.taskNamesUnknown.set(taskNames.isEmpty())
+            spec.parameters.reportWriterService.set(reportWriterServiceProvider)
         }
     }
 }
@@ -150,7 +152,8 @@ internal class GradleBuildStatsCompletedAction : FlowAction<GradleBuildStatsComp
         @get:ServiceReference("com.snapshot.gradle.GradleBuildStatsTaskCompletionService")
         val taskCompletionService: Property<GradleBuildStatsTaskCompletionService>
 
-        @get:ServiceReference("com.snapshot.gradle.GradleBuildStatsReportWriterService")
+//        @get:ServiceReference("com.snapshot.gradle.GradleBuildStatsReportWriterService")
+        @get:Input
         val reportWriterService: Property<GradleBuildStatsReportWriterService>
     }
 
@@ -160,6 +163,7 @@ internal class GradleBuildStatsCompletedAction : FlowAction<GradleBuildStatsComp
             logger.warn("missing reportWriterService")
             return
         }
+        logger.debug("reportWriterService ${reportWriterService.hashCode()}")
         val taskCompletionService = parameters.taskCompletionService.orNull ?: run {
             logger.warn("missing taskCompletionService")
             return
