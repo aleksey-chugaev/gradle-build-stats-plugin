@@ -79,6 +79,16 @@ abstract class GradleBuildStatsTaskCompletionService : BuildService<BuildService
         return lastKnownTask
     }
 
+    fun finish(buildStatus: String, buildDuration: Duration) {
+        logger.debug("finish")
+        reportWriterService.finish(buildStatus, buildDuration)
+    }
+
+    fun deleteReport() {
+        logger.debug("deleteReport")
+        reportWriterService.deleteReport()
+    }
+
     override fun close() {
         logger.debug("close ${hashCode()}, reportWriterService: ${reportWriterService.hashCode()}")
     }

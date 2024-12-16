@@ -176,7 +176,7 @@ internal class GradleBuildStatsCompletedAction : FlowAction<GradleBuildStatsComp
             if (pluginConfig != null && lastKnownTask != null) {
                 if (!isEnabledForTaskNames(listOf(lastKnownTask), pluginConfig)) {
                     logger.info("Plugin disabled for task '$lastKnownTask'")
-                    reportWriterService.deleteReport()
+                    taskCompletionService.deleteReport()
                     return
                 }
             }
@@ -184,7 +184,7 @@ internal class GradleBuildStatsCompletedAction : FlowAction<GradleBuildStatsComp
 
         val buildResult = parameters.buildResult.orNull ?: run {
             logger.warn("missing buildResult")
-            reportWriterService.finish("FAILURE", 0L.toDuration(DurationUnit.MILLISECONDS))
+            taskCompletionService.finish("FAILURE", 0L.toDuration(DurationUnit.MILLISECONDS))
             return
         }
         val isBuildSuccess = !buildResult.failure.isPresent
@@ -199,6 +199,6 @@ internal class GradleBuildStatsCompletedAction : FlowAction<GradleBuildStatsComp
         val duration = (Time.currentTimeMillis() - buildStartTimeMillis).toDuration(
             DurationUnit.MILLISECONDS
         )
-        reportWriterService.finish(status, duration)
+        taskCompletionService.finish(status, duration)
     }
 }
