@@ -31,7 +31,11 @@ import kotlin.time.Duration.Companion.milliseconds
 private val logger = getLogger("GradleBuildStatsTaskCompletionService")
 
 abstract class GradleBuildStatsTaskCompletionService : BuildService<BuildServiceParameters.None>,
-    OperationCompletionListener {
+    OperationCompletionListener, AutoCloseable {
+
+    init {
+        logger.debug("init")
+    }
 
     @ServiceReference("com.snapshot.gradle.GradleBuildStatsReportWriterService")
     abstract fun getReportWriterService(): Property<GradleBuildStatsReportWriterService>
@@ -71,7 +75,12 @@ abstract class GradleBuildStatsTaskCompletionService : BuildService<BuildService
     }
 
     fun getLastKnownTask(): String? {
+        logger.debug("getLastKnownTask ${hashCode()}, reportWriterService: ${reportWriterService.hashCode()}")
         return lastKnownTask
+    }
+
+    override fun close() {
+        logger.debug("close ${hashCode()}, reportWriterService: ${reportWriterService.hashCode()}")
     }
 
     data class TaskInfo(val taskPath: String, val duration: Duration, val status: TaskStatus) {

@@ -31,7 +31,8 @@ import kotlin.time.Duration
 
 private val logger = getLogger("GradleBuildStatsReportWriterService")
 
-abstract class GradleBuildStatsReportWriterService : BuildService<GradleBuildStatsReportWriterService.Parameters> {
+abstract class GradleBuildStatsReportWriterService : BuildService<GradleBuildStatsReportWriterService.Parameters>,
+    AutoCloseable {
 
     init {
         logger.debug("init")
@@ -49,7 +50,8 @@ abstract class GradleBuildStatsReportWriterService : BuildService<GradleBuildSta
         if (!::buildStatsFileWriter.isInitialized) {
             synchronized(this) {
                 if (!::buildStatsFileWriter.isInitialized) {
-                    val buildStartTimeMillis = Time.currentTimeMillis() - (taskInfo?.duration?.inWholeMilliseconds ?: 0L)
+                    val buildStartTimeMillis =
+                        Time.currentTimeMillis() - (taskInfo?.duration?.inWholeMilliseconds ?: 0L)
                     val buildStartTime =
                         Instant.ofEpochMilli(buildStartTimeMillis).atZone(ZoneId.systemDefault()).toLocalDateTime()
                     logger.debug(
@@ -95,6 +97,10 @@ abstract class GradleBuildStatsReportWriterService : BuildService<GradleBuildSta
         } else {
             logger.warn("buildStatsFileWriter not initialised (deleteReport)")
         }
+    }
+
+    override fun close() {
+        logger.debug("close ${hashCode()}")
     }
 }
 

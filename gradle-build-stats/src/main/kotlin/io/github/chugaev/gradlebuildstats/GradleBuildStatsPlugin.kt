@@ -152,7 +152,7 @@ internal class GradleBuildStatsCompletedAction : FlowAction<GradleBuildStatsComp
         @get:ServiceReference("com.snapshot.gradle.GradleBuildStatsTaskCompletionService")
         val taskCompletionService: Property<GradleBuildStatsTaskCompletionService>
 
-//        @get:ServiceReference("com.snapshot.gradle.GradleBuildStatsReportWriterService")
+        //        @get:ServiceReference("com.snapshot.gradle.GradleBuildStatsReportWriterService")
         @get:Input
         val reportWriterService: Property<GradleBuildStatsReportWriterService>
     }
@@ -170,8 +170,8 @@ internal class GradleBuildStatsCompletedAction : FlowAction<GradleBuildStatsComp
         }
 
         val taskNamesUnknown = parameters.taskNamesUnknown.orNull ?: false
+        val lastKnownTask = taskCompletionService.getLastKnownTask()
         if (taskNamesUnknown) {
-            val lastKnownTask = taskCompletionService.getLastKnownTask()
             val pluginConfig = parameters.pluginConfig.orNull
             if (pluginConfig != null && lastKnownTask != null) {
                 if (!isEnabledForTaskNames(listOf(lastKnownTask), pluginConfig)) {
