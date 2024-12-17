@@ -16,32 +16,62 @@
 
 package io.github.chugaev.gradlebuildstats
 
-import org.gradle.api.provider.Property
 import org.gradle.api.services.BuildService
 import org.gradle.api.services.BuildServiceParameters
-import org.gradle.api.services.ServiceReference
+import org.gradle.internal.time.Time
 import org.gradle.tooling.events.FinishEvent
 import org.gradle.tooling.events.OperationCompletionListener
 import org.gradle.tooling.events.task.TaskFinishEvent
 import org.gradle.tooling.events.task.TaskSkippedResult
 import org.gradle.tooling.events.task.TaskSuccessResult
+import java.time.Instant
+import java.time.ZoneId
+import java.time.format.DateTimeFormatter
 import kotlin.time.Duration
 import kotlin.time.Duration.Companion.milliseconds
 
 private val logger = getLogger("GradleBuildStatsTaskCompletionService")
 
-abstract class GradleBuildStatsTaskCompletionService : BuildService<BuildServiceParameters.None>,
+abstract class GradleBuildStatsTaskCompletionService : BuildService<GradleBuildStatsTaskCompletionService.Parameters>,
     OperationCompletionListener, AutoCloseable {
 
     init {
         logger.debug("init")
     }
 
-    @ServiceReference("com.snapshot.gradle.GradleBuildStatsReportWriterService")
-    abstract fun getReportWriterService(): Property<GradleBuildStatsReportWriterService>
+    interface Parameters : BuildServiceParameters {
+        var pluginConfig: GradleBuildStatsConfig
+        var taskNames: List<String>
+        var projectName: String
+    }
 
-    private val reportWriterService: GradleBuildStatsReportWriterService by lazy {
-        getReportWriterService().get()
+    private lateinit var buildStatsFileWriter: GradleBuildStatsReportWriter
+
+    private fun ensureBuildStatsFileWriter(taskInfo: TaskInfo? = null): Boolean {
+        if (!::buildStatsFileWriter.isInitialized) {
+            synchronized(this) {
+                if (!::buildStatsFileWriter.isInitialized) {
+                    val buildStartTimeMillis =
+                        Time.currentTimeMillis() - (taskInfo?.duration?.inWholeMilliseconds ?: 0L)
+                    val buildStartTime =
+                        Instant.ofEpochMilli(buildStartTimeMillis).atZone(ZoneId.systemDefault()).toLocalDateTime()
+                    logger.debug(
+                        "init buildStatsFileWriter ${hashCode()}, buildStartTime: ${
+                            DateTimeFormatter.ofPattern("yyyy-MM-dd--HH-mm-ss").format(buildStartTime)
+                        }"
+                    )
+                    buildStatsFileWriter = GradleBuildStatsReportWriter.createReportWriter(
+                        pluginConfig = parameters.pluginConfig,
+                        buildStartTime = buildStartTime,
+                        projectName = parameters.projectName,
+                        taskNames = parameters.taskNames
+                    )?.also {
+                        it.start(parameters.projectName, buildStartTimeMillis)
+                    } ?: NoOpGradleBuildStatsReportWriter
+                }
+            }
+        }
+        return buildStatsFileWriter !is NoOpGradleBuildStatsReportWriter
     }
 
     private var buildStartTimeMillis: Long = -1
@@ -54,7 +84,6 @@ abstract class GradleBuildStatsTaskCompletionService : BuildService<BuildService
             if (buildStartTimeMillis < 0) {
                 buildStartTimeMillis = event.result.startTime
             }
-//            logger.debug("taskFinished ${event.descriptor.taskPath} ${event.result.endTime - event.result.startTime}")
             val status = when (val result = event.result) {
                 is TaskSuccessResult -> TaskInfo.TaskStatus.Success(
                     upToDate = result.isUpToDate,
@@ -69,28 +98,39 @@ abstract class GradleBuildStatsTaskCompletionService : BuildService<BuildService
                 duration = (event.result.endTime - event.result.startTime).milliseconds,
                 status = status
             )
-            reportWriterService.addTask(taskInfo)
+            if (ensureBuildStatsFileWriter(taskInfo)) {
+                buildStatsFileWriter.addTask(taskInfo)
+            }
             lastKnownTask = event.descriptor.taskPath
         }
     }
 
-    fun getLastKnownTask(): String? {
-        logger.debug("getLastKnownTask ${hashCode()}, reportWriterService: ${reportWriterService.hashCode()}")
-        return lastKnownTask
+    fun getFinalBuildTaskNames(): List<String> {
+        val tasks = parameters.taskNames.toMutableList()
+        lastKnownTask?.removePrefix(":")?.let { lastKnownTask ->
+            if (tasks.none { it.removePrefix(":").equals(lastKnownTask, true) }) {
+                tasks.add(lastKnownTask)
+            }
+        }
+        return tasks.toList()
     }
 
     fun finish(buildStatus: String, buildDuration: Duration) {
         logger.debug("finish")
-        reportWriterService.finish(buildStatus, buildDuration)
+        if (ensureBuildStatsFileWriter()) {
+            buildStatsFileWriter.finish(getFinalBuildTaskNames(), buildStatus, buildDuration)
+        }
     }
 
     fun deleteReport() {
         logger.debug("deleteReport")
-        reportWriterService.deleteReport()
+        if (ensureBuildStatsFileWriter()) {
+            buildStatsFileWriter.deleteReport()
+        }
     }
 
     override fun close() {
-        logger.debug("close ${hashCode()}, reportWriterService: ${reportWriterService.hashCode()}")
+        logger.debug("close ${hashCode()}, buildStatsFileWriter: ${buildStatsFileWriter.hashCode()}")
     }
 
     data class TaskInfo(val taskPath: String, val duration: Duration, val status: TaskStatus) {

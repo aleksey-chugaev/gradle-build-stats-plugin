@@ -68,29 +68,21 @@ class GradleBuildStatsPlugin @Inject constructor(
         if (taskNames.isEmpty()) {
             taskNames = project.defaultTasks
         }
+        taskNames = taskNames.filterNot { it.startsWith("--") }.filterNot { it.contains(".") }
         logger.debug("taskNames=$taskNames")
         if (!isEnabledForTaskNames(taskNames, pluginConfig)) {
             logger.info("Plugin disabled for tasks '${taskNames.joinToString()}'")
             return
         }
 
-        val reportWriterServiceProvider = project.gradle.sharedServices.registerIfAbsent(
-            "com.snapshot.gradle.GradleBuildStatsReportWriterService",
-            GradleBuildStatsReportWriterService::class.java
+        val taskTrackerService = project.gradle.sharedServices.registerIfAbsent(
+            "com.snapshot.gradle.GradleBuildStatsTaskCompletionService",
+            GradleBuildStatsTaskCompletionService::class.java
         ) { spec ->
             spec.parameters.pluginConfig = pluginConfig
             spec.parameters.taskNames = taskNames
             spec.parameters.projectName = project.name
         }
-        if (!reportWriterServiceProvider.isPresent) {
-            logger.warn("Failed to register GradleBuildStatsReportWriterService")
-            return
-        }
-
-        val taskTrackerService = project.gradle.sharedServices.registerIfAbsent(
-            "com.snapshot.gradle.GradleBuildStatsTaskCompletionService",
-            GradleBuildStatsTaskCompletionService::class.java
-        ) { }
         if (!taskTrackerService.isPresent) {
             logger.warn("Failed to register GradleBuildStatsTaskCompletionService")
             return
@@ -102,7 +94,6 @@ class GradleBuildStatsPlugin @Inject constructor(
             spec.parameters.buildResult.set(flowProviders.buildWorkResult)
             spec.parameters.pluginConfig.set(pluginConfig)
             spec.parameters.taskNamesUnknown.set(taskNames.isEmpty())
-            spec.parameters.reportWriterService.set(reportWriterServiceProvider)
         }
     }
 }
@@ -151,34 +142,22 @@ internal class GradleBuildStatsCompletedAction : FlowAction<GradleBuildStatsComp
 
         @get:ServiceReference("com.snapshot.gradle.GradleBuildStatsTaskCompletionService")
         val taskCompletionService: Property<GradleBuildStatsTaskCompletionService>
-
-        //        @get:ServiceReference("com.snapshot.gradle.GradleBuildStatsReportWriterService")
-        @get:Input
-        val reportWriterService: Property<GradleBuildStatsReportWriterService>
     }
 
     override fun execute(parameters: Parameters) {
         logger.debug("execute")
-        val reportWriterService = parameters.reportWriterService.orNull ?: run {
-            logger.warn("missing reportWriterService")
-            return
-        }
-        logger.debug("reportWriterService ${reportWriterService.hashCode()}")
         val taskCompletionService = parameters.taskCompletionService.orNull ?: run {
             logger.warn("missing taskCompletionService")
             return
         }
 
-        val taskNamesUnknown = parameters.taskNamesUnknown.orNull ?: false
-        val lastKnownTask = taskCompletionService.getLastKnownTask()
-        if (taskNamesUnknown) {
-            val pluginConfig = parameters.pluginConfig.orNull
-            if (pluginConfig != null && lastKnownTask != null) {
-                if (!isEnabledForTaskNames(listOf(lastKnownTask), pluginConfig)) {
-                    logger.info("Plugin disabled for task '$lastKnownTask'")
-                    taskCompletionService.deleteReport()
-                    return
-                }
+        val buildTaskNames = taskCompletionService.getFinalBuildTaskNames()
+        val pluginConfig = parameters.pluginConfig.orNull
+        if (pluginConfig != null) {
+            if (!isEnabledForTaskNames(buildTaskNames, pluginConfig)) {
+                logger.info("Plugin disabled for tasks '$buildTaskNames'")
+                taskCompletionService.deleteReport()
+                return
             }
         }
 

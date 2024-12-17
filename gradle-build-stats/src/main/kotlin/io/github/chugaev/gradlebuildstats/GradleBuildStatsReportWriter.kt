@@ -17,98 +17,20 @@
 package io.github.chugaev.gradlebuildstats
 
 import io.github.chugaev.gradlebuildstats.GradleBuildStatsTaskCompletionService.TaskInfo
-import org.gradle.api.services.BuildService
-import org.gradle.api.services.BuildServiceParameters
-import org.gradle.internal.time.Time
 import java.io.BufferedWriter
 import java.io.File
 import java.io.FileWriter
-import java.time.Instant
 import java.time.LocalDateTime
-import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 import kotlin.time.Duration
 
-private val logger = getLogger("GradleBuildStatsReportWriterService")
-
-abstract class GradleBuildStatsReportWriterService : BuildService<GradleBuildStatsReportWriterService.Parameters>,
-    AutoCloseable {
-
-    init {
-        logger.debug("init")
-    }
-
-    interface Parameters : BuildServiceParameters {
-        var pluginConfig: GradleBuildStatsConfig
-        var taskNames: List<String>
-        var projectName: String
-    }
-
-    private lateinit var buildStatsFileWriter: GradleBuildStatsReportWriter
-
-    private fun ensureBuildStatsFileWriter(taskInfo: TaskInfo? = null): Boolean {
-        if (!::buildStatsFileWriter.isInitialized) {
-            synchronized(this) {
-                if (!::buildStatsFileWriter.isInitialized) {
-                    val buildStartTimeMillis =
-                        Time.currentTimeMillis() - (taskInfo?.duration?.inWholeMilliseconds ?: 0L)
-                    val buildStartTime =
-                        Instant.ofEpochMilli(buildStartTimeMillis).atZone(ZoneId.systemDefault()).toLocalDateTime()
-                    logger.debug(
-                        "init buildStatsFileWriter ${hashCode()}, buildStartTime: ${
-                            DateTimeFormatter.ofPattern("yyyy-MM-dd--HH-mm-ss").format(buildStartTime)
-                        }"
-                    )
-                    buildStatsFileWriter = GradleBuildStatsReportWriter.createReportWriter(
-                        pluginConfig = parameters.pluginConfig,
-                        buildStartTime = buildStartTime,
-                        projectName = parameters.projectName,
-                        taskNames = parameters.taskNames
-                    )?.also {
-                        it.start(parameters.projectName, parameters.taskNames, buildStartTimeMillis)
-                    } ?: NoOpGradleBuildStatsReportWriter
-                }
-            }
-        }
-        return buildStatsFileWriter !is NoOpGradleBuildStatsReportWriter
-    }
-
-    fun addTask(taskInfo: TaskInfo) {
-        if (ensureBuildStatsFileWriter(taskInfo)) {
-            buildStatsFileWriter.addTask(taskInfo)
-        } else {
-            logger.warn("buildStatsFileWriter not initialised (addTask)")
-        }
-    }
-
-    fun finish(buildStatus: String, buildDuration: Duration) {
-        logger.debug("finish")
-        if (ensureBuildStatsFileWriter()) {
-            buildStatsFileWriter.finish(buildStatus, buildDuration)
-        } else {
-            logger.warn("buildStatsFileWriter not initialised (finish)")
-        }
-    }
-
-    fun deleteReport() {
-        logger.debug("deleteReport")
-        if (ensureBuildStatsFileWriter()) {
-            buildStatsFileWriter.deleteReport()
-        } else {
-            logger.warn("buildStatsFileWriter not initialised (deleteReport)")
-        }
-    }
-
-    override fun close() {
-        logger.debug("close ${hashCode()}")
-    }
-}
+private val logger = getLogger("GradleBuildStatsReportWriter")
 
 interface GradleBuildStatsReportWriter {
 
-    fun start(projectName: String, taskNames: List<String>, buildStartTimeMillis: Long)
+    fun start(projectName: String, buildStartTimeMillis: Long)
 
-    fun finish(buildStatus: String, buildDuration: Duration)
+    fun finish(taskNames: List<String>, buildStatus: String, buildDuration: Duration)
 
     fun addTask(taskInfo: TaskInfo)
 
@@ -175,10 +97,10 @@ interface GradleBuildStatsReportWriter {
     }
 }
 
-private data object NoOpGradleBuildStatsReportWriter : GradleBuildStatsReportWriter {
-    override fun start(projectName: String, taskNames: List<String>, buildStartTimeMillis: Long) = Unit
+internal data object NoOpGradleBuildStatsReportWriter : GradleBuildStatsReportWriter {
+    override fun start(projectName: String, buildStartTimeMillis: Long) = Unit
 
-    override fun finish(buildStatus: String, buildDuration: Duration) = Unit
+    override fun finish(taskNames: List<String>, buildStatus: String, buildDuration: Duration) = Unit
 
     override fun addTask(taskInfo: TaskInfo) = Unit
 
@@ -198,22 +120,23 @@ private class BufferedReportFileWriter(private val file: File) : GradleBuildStat
         BufferedWriter(FileWriter(file, false))
     }
 
-    override fun start(projectName: String, taskNames: List<String>, buildStartTimeMillis: Long) {
+    override fun start(projectName: String, buildStartTimeMillis: Long) {
         synchronized(this) {
             logger.debug("start")
             fileWriter.appendLine("version: 1")
             fileWriter.appendLine("project: $projectName")
+            fileWriter.appendLine("buildStartTime: $buildStartTimeMillis")
+            fileWriter.flush()
+        }
+    }
+
+    override fun finish(taskNames: List<String>, buildStatus: String, buildDuration: Duration) {
+        synchronized(this) {
+            logger.debug("finish")
             fileWriter.appendLine("buildTaskNames:")
             taskNames.forEach { taskName ->
                 fileWriter.appendLine("- \"$taskName\"")
             }
-            fileWriter.appendLine("buildStartTime: $buildStartTimeMillis")
-        }
-    }
-
-    override fun finish(buildStatus: String, buildDuration: Duration) {
-        synchronized(this) {
-            logger.debug("finish")
             fileWriter.appendLine("buildStatus: \"$buildStatus\"")
             fileWriter.appendLine("buildDuration: ${buildDuration.inWholeMilliseconds}")
             fileWriter.close()
@@ -235,6 +158,7 @@ private class BufferedReportFileWriter(private val file: File) : GradleBuildStat
             fileWriter.appendLine("- path: \"${taskInfo.taskPath}\"")
             fileWriter.appendLine("  duration: ${taskInfo.duration.inWholeMilliseconds}")
             fileWriter.appendLine("  status: \"${taskInfo.status.describe()}\"")
+            fileWriter.flush()
         }
     }
 
