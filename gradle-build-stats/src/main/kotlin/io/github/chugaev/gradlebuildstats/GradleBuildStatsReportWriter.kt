@@ -77,7 +77,11 @@ interface GradleBuildStatsReportWriter {
             val buildStatsFileName = buildString {
                 append(DateTimeFormatter.ofPattern("yyyy-MM-dd--HH-mm-ss").format(buildStartTime))
                 append("-").append(projectName.lowercase())
-                val tasks = taskNames.mapNotNull {
+                val tasks = taskNames.filterNot {
+                    it.startsWith("-")
+                }.filterNot {
+                    it.contains(".")
+                }.mapNotNull {
                     it.substringAfterLast(":").lowercase().takeIf { it.isNotEmpty() }
                 }.joinToString("-")
                 if (tasks.isNotEmpty()) {

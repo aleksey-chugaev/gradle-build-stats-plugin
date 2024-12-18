@@ -56,7 +56,7 @@ abstract class GradleBuildStatsTaskCompletionService : BuildService<GradleBuildS
                     val buildStartTime =
                         Instant.ofEpochMilli(buildStartTimeMillis).atZone(ZoneId.systemDefault()).toLocalDateTime()
                     logger.debug(
-                        "init buildStatsFileWriter ${hashCode()}, buildStartTime: ${
+                        "init buildStatsFileWriter, buildStartTime: ${
                             DateTimeFormatter.ofPattern("yyyy-MM-dd--HH-mm-ss").format(buildStartTime)
                         }"
                     )
@@ -75,6 +75,7 @@ abstract class GradleBuildStatsTaskCompletionService : BuildService<GradleBuildS
     }
 
     private var buildStartTimeMillis: Long = -1
+    private var buildDurationMillis: Long = 0
     private var lastKnownTask: String? = null
 
     fun getBuildStartTime() = buildStartTimeMillis
@@ -93,22 +94,24 @@ abstract class GradleBuildStatsTaskCompletionService : BuildService<GradleBuildS
                 is TaskSkippedResult -> TaskInfo.TaskStatus.Skipped(skippedMessage = result.skipMessage)
                 else -> TaskInfo.TaskStatus.Failed
             }
+            val durationMillis = event.result.endTime - event.result.startTime
             val taskInfo = TaskInfo(
                 taskPath = event.descriptor.taskPath,
-                duration = (event.result.endTime - event.result.startTime).milliseconds,
+                duration = durationMillis.milliseconds,
                 status = status
             )
             if (ensureBuildStatsFileWriter(taskInfo)) {
                 buildStatsFileWriter.addTask(taskInfo)
+                lastKnownTask = event.descriptor.taskPath
+                buildDurationMillis += durationMillis
             }
-            lastKnownTask = event.descriptor.taskPath
         }
     }
 
     fun getFinalBuildTaskNames(): List<String> {
         val tasks = parameters.taskNames.toMutableList()
-        lastKnownTask?.removePrefix(":")?.let { lastKnownTask ->
-            if (tasks.none { it.removePrefix(":").equals(lastKnownTask, true) }) {
+        lastKnownTask?.let { lastKnownTask ->
+            if (tasks.isEmpty()) {
                 tasks.add(lastKnownTask)
             }
         }
@@ -118,7 +121,7 @@ abstract class GradleBuildStatsTaskCompletionService : BuildService<GradleBuildS
     fun finish(buildStatus: String, buildDuration: Duration) {
         logger.debug("finish")
         if (ensureBuildStatsFileWriter()) {
-            buildStatsFileWriter.finish(getFinalBuildTaskNames(), buildStatus, buildDuration)
+            buildStatsFileWriter.finish(getFinalBuildTaskNames(), buildStatus, buildDurationMillis.milliseconds)
         }
     }
 
@@ -130,7 +133,7 @@ abstract class GradleBuildStatsTaskCompletionService : BuildService<GradleBuildS
     }
 
     override fun close() {
-        logger.debug("close ${hashCode()}, buildStatsFileWriter: ${buildStatsFileWriter.hashCode()}")
+        logger.debug("close")
     }
 
     data class TaskInfo(val taskPath: String, val duration: Duration, val status: TaskStatus) {

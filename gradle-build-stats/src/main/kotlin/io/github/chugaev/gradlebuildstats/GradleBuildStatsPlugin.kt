@@ -46,7 +46,7 @@ class GradleBuildStatsPlugin @Inject constructor(
 ) : Plugin<Project> {
 
     override fun apply(project: Project) {
-        logger.debug("apply ${hashCode()}")
+        logger.debug("apply")
         val extension = project.extensions.create("gradleBuildStats", GradleBuildStatsPluginExtension::class.java)
         project.afterEvaluate {
             doApply(project, extension)
@@ -54,7 +54,7 @@ class GradleBuildStatsPlugin @Inject constructor(
     }
 
     private fun doApply(project: Project, extension: GradleBuildStatsPluginExtension) {
-        logger.debug("afterEvaluate")
+        logger.debug("project afterEvaluate")
         if (extension.disabled.getOrElse(false)) {
             logger.info("Plugin disabled (via extension)")
             return
@@ -68,7 +68,6 @@ class GradleBuildStatsPlugin @Inject constructor(
         if (taskNames.isEmpty()) {
             taskNames = project.defaultTasks
         }
-        taskNames = taskNames.filterNot { it.startsWith("--") }.filterNot { it.contains(".") }
         logger.debug("taskNames=$taskNames")
         if (!isEnabledForTaskNames(taskNames, pluginConfig)) {
             logger.info("Plugin disabled for tasks '${taskNames.joinToString()}'")
