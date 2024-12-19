@@ -27,6 +27,7 @@ import org.gradle.tooling.events.task.TaskSuccessResult
 import java.time.Instant
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
+import java.util.concurrent.atomic.AtomicLong
 import kotlin.time.Duration
 import kotlin.time.Duration.Companion.milliseconds
 
@@ -51,7 +52,7 @@ abstract class GradleBuildStatsTaskCompletionService : BuildService<GradleBuildS
         if (!::buildStatsFileWriter.isInitialized) {
             synchronized(this) {
                 if (!::buildStatsFileWriter.isInitialized) {
-                    val buildStartTimeMillis =
+                    buildStartTimeMillis =
                         Time.currentTimeMillis() - (taskInfo?.duration?.inWholeMilliseconds ?: 0L)
                     val buildStartTime =
                         Instant.ofEpochMilli(buildStartTimeMillis).atZone(ZoneId.systemDefault()).toLocalDateTime()
@@ -75,16 +76,11 @@ abstract class GradleBuildStatsTaskCompletionService : BuildService<GradleBuildS
     }
 
     private var buildStartTimeMillis: Long = -1
-    private var buildDurationMillis: Long = 0
+    private var buildDurationMillis = AtomicLong(0)
     private var lastKnownTask: String? = null
-
-    fun getBuildStartTime() = buildStartTimeMillis
 
     override fun onFinish(e: FinishEvent?) {
         (e as? TaskFinishEvent)?.let { event ->
-            if (buildStartTimeMillis < 0) {
-                buildStartTimeMillis = event.result.startTime
-            }
             val status = when (val result = event.result) {
                 is TaskSuccessResult -> TaskInfo.TaskStatus.Success(
                     upToDate = result.isUpToDate,
@@ -103,7 +99,7 @@ abstract class GradleBuildStatsTaskCompletionService : BuildService<GradleBuildS
             if (ensureBuildStatsFileWriter(taskInfo)) {
                 buildStatsFileWriter.addTask(taskInfo)
                 lastKnownTask = event.descriptor.taskPath
-                buildDurationMillis += durationMillis
+                buildDurationMillis.addAndGet(durationMillis)
             }
         }
     }
@@ -118,10 +114,10 @@ abstract class GradleBuildStatsTaskCompletionService : BuildService<GradleBuildS
         return tasks.toList()
     }
 
-    fun finish(buildStatus: String, buildDuration: Duration) {
+    fun finish(buildStatus: String) {
         logger.debug("finish")
         if (ensureBuildStatsFileWriter()) {
-            buildStatsFileWriter.finish(getFinalBuildTaskNames(), buildStatus, buildDurationMillis.milliseconds)
+            buildStatsFileWriter.finish(getFinalBuildTaskNames(), buildStatus, buildDurationMillis.get().milliseconds)
         }
     }
 

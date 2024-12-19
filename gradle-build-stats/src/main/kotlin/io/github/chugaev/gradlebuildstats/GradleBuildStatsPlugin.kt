@@ -162,7 +162,7 @@ internal class GradleBuildStatsCompletedAction : FlowAction<GradleBuildStatsComp
 
         val buildResult = parameters.buildResult.orNull ?: run {
             logger.warn("missing buildResult")
-            taskCompletionService.finish("FAILURE", 0L.toDuration(DurationUnit.MILLISECONDS))
+            taskCompletionService.finish("FAILURE")
             return
         }
         val isBuildSuccess = !buildResult.failure.isPresent
@@ -173,10 +173,6 @@ internal class GradleBuildStatsCompletedAction : FlowAction<GradleBuildStatsComp
             "FAILED"
         }
 
-        val buildStartTimeMillis = taskCompletionService.getBuildStartTime()
-        val duration = (Time.currentTimeMillis() - buildStartTimeMillis).toDuration(
-            DurationUnit.MILLISECONDS
-        )
-        taskCompletionService.finish(status, duration)
+        taskCompletionService.finish(status)
     }
 }
